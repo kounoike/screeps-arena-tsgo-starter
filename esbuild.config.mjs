@@ -263,32 +263,28 @@ const toOutputKey = (entryPoint, mode) =>
     .replace('/main/', '/')
     .replace(/\.ts$/, `/${mode}/main`)
 
+const INLINE_SOURCEMAP_REGEX = /\/\/\#\s*sourceMappingURL=data:application\/json(?:;charset=[^;,]+)?;base64,([^\s]+)/m
+
+const sanitizeSourceMap = mapObj => {
+  if (mapObj.sourcesContent) delete mapObj.sourcesContent
+  if (mapObj.names && mapObj.names.length > 0) delete mapObj.names
+  return mapObj
+}
+
+const createEmbeddedSourcemapHeader = mapBase64 =>
+  `// Embedded sourcemap for runtime error mapping\n` +
+  `globalThis.__EMBEDDED_SOURCEMAP = { __base64: "${mapBase64}", __lineOffset: 3 };\n\n`
+
 
 // sourcemap埋め込みプラグイン（dev専用）
 const embedInlineSourcemapPlugin = (watchMode) => ({
   name: 'embed-inline-sourcemap',
   setup(build) {
-    const mapCache = new Map()
-    const headerCache = new Map()
+    const sourcemapCache = new Map()
     const outCache = new Map()
     build.onEnd(async result => {
       if (!result.metafile) return
       const outputs = Object.keys(result.metafile.outputs).filter(p => p.endsWith('.mjs'))
-
-      // .mapキャッシュ更新
-      await Promise.all(outputs.map(async outPath => {
-        const mapPath = `${outPath}.map`
-        if (!existsSync(mapPath)) return
-        try {
-          const st = statSync(mapPath)
-          const meta = mapCache.get(mapPath)
-          if (!meta || meta.mtimeMs !== st.mtimeMs || meta.size !== st.size) {
-            const content = readFileSync(mapPath, 'utf-8')
-            mapCache.set(mapPath, { content, mtimeMs: st.mtimeMs, size: st.size })
-            headerCache.delete(mapPath)
-          }
-        } catch {}
-      }))
 
       // 変更出力のみ処理
       const changedOutputs = []
@@ -310,28 +306,38 @@ const embedInlineSourcemapPlugin = (watchMode) => ({
       await Promise.all(changedOutputs.map(async outPath => {
         try {
           if (!existsSync(outPath)) return
+          let js = readFileSync(outPath, 'utf-8')
           const mapPath = `${outPath}.map`
-          const meta = mapCache.get(mapPath)
-          if (!meta) return
-          let mapObj = JSON.parse(meta.content)
-          if (mapObj.sourcesContent) delete mapObj.sourcesContent
-          if (mapObj.names && mapObj.names.length > 0) delete mapObj.names
+          let mapBase64 = null
 
-          let header
-          const cachedHeader = headerCache.get(mapPath)
-          if (cachedHeader && cachedHeader.mtimeMs === meta.mtimeMs && cachedHeader.size === meta.size) {
-            header = cachedHeader.header
+          if (existsSync(mapPath)) {
+            const st = statSync(mapPath)
+            const cacheKey = `${mapPath}:${st.mtimeMs}:${st.size}`
+            mapBase64 = sourcemapCache.get(cacheKey) ?? null
+
+            if (!mapBase64) {
+              const compactJson = JSON.stringify(sanitizeSourceMap(JSON.parse(readFileSync(mapPath, 'utf-8'))))
+              mapBase64 = Buffer.from(compactJson, 'utf-8').toString('base64')
+              sourcemapCache.set(cacheKey, mapBase64)
+            }
           } else {
-            const compactJson = JSON.stringify(mapObj)
-            const mapBase64 = Buffer.from(compactJson, 'utf-8').toString('base64')
-            header = `// Embedded sourcemap for runtime error mapping\n` +
-                     `globalThis.__EMBEDDED_SOURCEMAP = { __base64: "${mapBase64}", __lineOffset: 3 };\n\n`
-            headerCache.set(mapPath, { header, mtimeMs: meta.mtimeMs, size: meta.size })
+            const inlineMatch = js.match(INLINE_SOURCEMAP_REGEX)
+            if (!inlineMatch) return
+            const inlineBase64 = inlineMatch[1]
+            const cacheKey = `${outPath}:inline:${inlineBase64.length}:${inlineBase64.slice(0, 64)}`
+            mapBase64 = sourcemapCache.get(cacheKey) ?? null
+
+            if (!mapBase64) {
+              const compactJson = JSON.stringify(sanitizeSourceMap(JSON.parse(Buffer.from(inlineBase64, 'base64').toString('utf-8'))))
+              mapBase64 = Buffer.from(compactJson, 'utf-8').toString('base64')
+              sourcemapCache.set(cacheKey, mapBase64)
+            }
           }
 
-          let js = readFileSync(outPath, 'utf-8')
+          if (!mapBase64) return
+
           js = js.replace(/\n?\/\/\#\s*sourceMappingURL=.+$/m, '')
-          writeFileSync(outPath, header + js, 'utf-8')
+          writeFileSync(outPath, createEmbeddedSourcemapHeader(mapBase64) + js, 'utf-8')
         } catch (err) {
           console.error(`[sourcemap] Error processing ${outPath}:`, err)
         }
