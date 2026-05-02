@@ -1,5 +1,6 @@
 import * as esbuild from 'esbuild'
 import { glob } from 'glob'
+import chokidar from 'chokidar'
 import c from 'ansi-colors'
 import columns from 'cli-columns'
 import logUpdate from 'log-update'
@@ -124,7 +125,7 @@ const startTypeChecker = () => {
 
   console.log(`${c.dim('Starting type checker...')}`)
   
-  typeCheckerProcess = spawn('npx', ['tsgo', '-p', 'tsconfig.json', '--watch'], {
+  typeCheckerProcess = spawn('npx', ['tsgo', '-p', 'tsconfig.json', '--watch', '--noEmit'], {
     stdio: 'pipe',
     shell: true,
   })
@@ -182,17 +183,38 @@ const stopTypeChecker = () => {
   }
 }
 
-// Cleanup on exit
-process.on('SIGINT', () => {
+const shutdownHandlers = []
+let isShuttingDown = false
+
+const addShutdownHandler = handler => {
+  shutdownHandlers.push(handler)
+}
+
+const runShutdownHandlers = async () => {
+  while (shutdownHandlers.length > 0) {
+    const handler = shutdownHandlers.pop()
+    try {
+      await handler()
+    } catch {}
+  }
+}
+
+const shutdown = async () => {
+  if (isShuttingDown) return
+  isShuttingDown = true
+  await runShutdownHandlers()
   cliCursor.show()
   stopTypeChecker()
   process.exit(0)
+}
+
+// Cleanup on exit
+process.on('SIGINT', () => {
+  void shutdown()
 })
 
 process.on('SIGTERM', () => {
-  cliCursor.show()
-  stopTypeChecker()
-  process.exit(0)
+  void shutdown()
 })
 
 const commonConfig = {
@@ -211,7 +233,7 @@ const commonConfig = {
 // Expand glob patterns
 const expandGlobs = async patterns => {
   const files = await Promise.all(patterns.map(p => glob(p, { nodir: true })))
-  return files.flat()
+  return [...new Set(files.flat())].sort()
 }
 
 const configPatterns = {
@@ -233,7 +255,7 @@ if (!patterns) {
 }
 
 // Get entry points
-const entryPoints = await expandGlobs(patterns)
+let entryPoints = await expandGlobs(patterns)
 
 const toOutputKey = (entryPoint, mode) =>
   entryPoint
@@ -428,127 +450,172 @@ if (watch) {
   // Initialize status display
   renderStatus()
 
-  const devWatchConfig = {
-    ...buildConfigForMode('dev'),
-    plugins: [embedInlineSourcemapPlugin(true)],
-  }
-  const ctxDev = await esbuild.context({
-    ...devWatchConfig,
-    plugins: [
-      ...(devWatchConfig.plugins || []),
-      {
-        name: 'watch-plugin',
-        setup(build) {
-          // 初回は上で同期ビルド済みなので抑制
-          let isFirstBuild = false
-          build.onEnd(result => {
-            if (result.errors.length > 0) {
-              const errorLines = []
-              for (const err of result.errors.slice(0, 3)) {
-                errorLines.push(c.dim(`${err.location?.file}:${err.location?.line}:${err.location?.column}`))
-                errorLines.push(err.text)
-              }
-              if (result.errors.length > 3) {
-                errorLines.push(c.dim(`... and ${result.errors.length - 3} more errors`))
-              }
-              updateBuildDevStatus('error', 'Build failed', errorLines)
-            } else {
-              if (isFirstBuild) {
-                const outputs = result.metafile 
-                  ? Object.entries(result.metafile.outputs).filter(([path]) => path.endsWith('.mjs'))
-                  : []
-                if (outputs.length > 0) {
-                  const byDir = {}
-                  for (const [path, info] of outputs) {
-                    const dir = path.replace(/\/main\.mjs$/, '').replace(/^dist\//, '')
-                    try {
-                      const st = statSync(path)
-                      byDir[dir] = st.size
-                    } catch {
-                      byDir[dir] = info.bytes
-                    }
-                  }
-                  const entries = Object.entries(byDir)
-                    .sort()
-                    .map(([dir, size]) => `${c.magenta('›')} ${dir} ${c.dim(`(${formatSize(size)})`)}`)
-                  persistentLog(c.dim('Initial build output:'))
-                  persistentLog(columns(entries, { width: process.stdout.columns || 100 }))
-                  const totalSize = outputs.reduce((sum, [p, info]) => {
-                    try { return sum + statSync(p).size } catch { return sum + info.bytes }
-                  }, 0)
-                  persistentLog(`\n  ${c.dim('Total:')} ${c.magenta(outputs.length)} files ${c.dim(`(${formatSize(totalSize)})`)}`)
-                  persistentLog(c.dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
-                }
-                isFirstBuild = false
-              }
-              updateBuildDevStatus('success', 'Build succeeded')
-            }
-          })
-        },
-      },
-    ],
-  })
-  await ctxDev.watch()
+  let ctxDev = null
+  let ctxProd = null
+  let entryWatcher = null
+  let refreshTimer = null
+  let isRefreshingEntries = false
 
-  // prod側も同様に監視
-  const prodWatchConfig = {
-    ...buildConfigForMode('prod'),
-  }
-  const ctxProd = await esbuild.context({
-    ...prodWatchConfig,
-    plugins: [
-      ...(prodWatchConfig.plugins || []),
-      {
-        name: 'watch-plugin',
-        setup(build) {
-          // 初回は上で同期ビルド済みなので抑制
-          let isFirstBuild = false
-          build.onEnd(result => {
-            if (result.errors.length > 0) {
-              const errorLines = []
-              for (const err of result.errors.slice(0, 3)) {
-                errorLines.push(c.dim(`${err.location?.file}:${err.location?.line}:${err.location?.column}`))
-                errorLines.push(err.text)
-              }
-              if (result.errors.length > 3) {
-                errorLines.push(c.dim(`... and ${result.errors.length - 3} more errors`))
-              }
-              updateBuildProdStatus('error', 'Build failed', errorLines)
-            } else {
-              if (isFirstBuild) {
-                const outputs = result.metafile 
-                  ? Object.entries(result.metafile.outputs).filter(([path]) => path.endsWith('.mjs'))
-                  : []
-                if (outputs.length > 0) {
-                  const byDir = {}
-                  for (const [path, info] of outputs) {
-                    const dir = path.replace(/\/main\.mjs$/, '').replace(/^dist\//, '')
-                    try {
-                      const st = statSync(path)
-                      byDir[dir] = st.size
-                    } catch {
-                      byDir[dir] = info.bytes
-                    }
-                  }
-                  const entries = Object.entries(byDir)
-                    .sort()
-                    .map(([dir, size]) => `${c.magenta('›')} ${dir} ${c.dim(`(${formatSize(size)})`)}`)
-                  persistentLog(c.dim('Initial build output (prod):'))
-                  persistentLog(columns(entries, { width: process.stdout.columns || 100 }))
-                  const totalSize = outputs.reduce((sum, [p, info]) => { try { return sum + statSync(p).size } catch { return sum + info.bytes } }, 0)
-                  persistentLog(`\n  ${c.dim('Total:')} ${c.magenta(outputs.length)} files ${c.dim(`(${formatSize(totalSize)})`)}`)
-                  persistentLog(c.dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
+  const createWatchPlugin = mode => ({
+    name: `watch-plugin-${mode}`,
+    setup(build) {
+      // 初回は上で同期ビルド済みなので抑制
+      let isFirstBuild = false
+      build.onEnd(result => {
+        if (result.errors.length > 0) {
+          const errorLines = []
+          for (const err of result.errors.slice(0, 3)) {
+            errorLines.push(c.dim(`${err.location?.file}:${err.location?.line}:${err.location?.column}`))
+            errorLines.push(err.text)
+          }
+          if (result.errors.length > 3) {
+            errorLines.push(c.dim(`... and ${result.errors.length - 3} more errors`))
+          }
+          if (mode === 'dev') {
+            updateBuildDevStatus('error', 'Build failed', errorLines)
+          } else {
+            updateBuildProdStatus('error', 'Build failed', errorLines)
+          }
+        } else {
+          if (isFirstBuild) {
+            const outputs = result.metafile
+              ? Object.entries(result.metafile.outputs).filter(([path]) => path.endsWith('.mjs'))
+              : []
+            if (outputs.length > 0) {
+              const byDir = {}
+              for (const [path, info] of outputs) {
+                const dir = path.replace(/\/main\.mjs$/, '').replace(/^dist\//, '')
+                try {
+                  const st = statSync(path)
+                  byDir[dir] = st.size
+                } catch {
+                  byDir[dir] = info.bytes
                 }
-                isFirstBuild = false
               }
-              updateBuildProdStatus('success', 'Build succeeded')
+              const entries = Object.entries(byDir)
+                .sort()
+                .map(([dir, size]) => `${c.magenta('›')} ${dir} ${c.dim(`(${formatSize(size)})`)}`)
+              persistentLog(c.dim(mode === 'dev' ? 'Initial build output:' : 'Initial build output (prod):'))
+              persistentLog(columns(entries, { width: process.stdout.columns || 100 }))
+              const totalSize = outputs.reduce((sum, [p, info]) => {
+                try { return sum + statSync(p).size } catch { return sum + info.bytes }
+              }, 0)
+              persistentLog(`\n  ${c.dim('Total:')} ${c.magenta(outputs.length)} files ${c.dim(`(${formatSize(totalSize)})`)}`)
+              persistentLog(c.dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'))
             }
-          })
-        },
-      },
-    ],
+            isFirstBuild = false
+          }
+          if (mode === 'dev') {
+            updateBuildDevStatus('success', 'Build succeeded')
+          } else {
+            updateBuildProdStatus('success', 'Build succeeded')
+          }
+        }
+      })
+    },
   })
-  await ctxProd.watch()
+
+  const startWatchContexts = async () => {
+    const devWatchConfig = {
+      ...buildConfigForMode('dev'),
+      plugins: [embedInlineSourcemapPlugin(true)],
+    }
+    ctxDev = await esbuild.context({
+      ...devWatchConfig,
+      plugins: [
+        ...(devWatchConfig.plugins || []),
+        createWatchPlugin('dev'),
+      ],
+    })
+    await ctxDev.watch()
+
+    const prodWatchConfig = {
+      ...buildConfigForMode('prod'),
+    }
+    ctxProd = await esbuild.context({
+      ...prodWatchConfig,
+      plugins: [
+        ...(prodWatchConfig.plugins || []),
+        createWatchPlugin('prod'),
+      ],
+    })
+    await ctxProd.watch()
+  }
+
+  const refreshEntryPoints = async reason => {
+    if (isRefreshingEntries) return
+    isRefreshingEntries = true
+    try {
+      const nextEntryPoints = await expandGlobs(patterns)
+      const hasChanges =
+        nextEntryPoints.length !== entryPoints.length ||
+        nextEntryPoints.some((entry, index) => entry !== entryPoints[index])
+
+      if (!hasChanges) return
+
+      const prevCount = entryPoints.length
+      entryPoints = nextEntryPoints
+      persistentLog(`${c.dim('Entry points changed:')} ${c.yellow(reason)} ${c.dim(`(${prevCount} -> ${entryPoints.length})`)}`)
+
+      await ctxDev?.dispose()
+      await ctxProd?.dispose()
+      ctxDev = null
+      ctxProd = null
+      await startWatchContexts()
+      persistentLog(c.dim('Watch contexts refreshed with updated entry points'))
+    } catch (error) {
+      const message = error?.message || String(error)
+      updateBuildDevStatus('error', 'Failed to refresh watch contexts', [message])
+      updateBuildProdStatus('error', 'Failed to refresh watch contexts', [message])
+    } finally {
+      isRefreshingEntries = false
+    }
+  }
+
+  const scheduleEntryRefresh = reason => {
+    if (refreshTimer) clearTimeout(refreshTimer)
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null
+      void refreshEntryPoints(reason)
+    }, 120)
+  }
+
+  await startWatchContexts()
+
+  entryWatcher = chokidar.watch(['src/**/main', ...patterns], {
+    ignoreInitial: true,
+    awaitWriteFinish: {
+      stabilityThreshold: 120,
+      pollInterval: 20,
+    },
+  })
+
+  const onEntryEvent = (eventName, changedPath) => {
+    const isTsFile = changedPath.endsWith('.ts')
+    const isMainDir = /(^|[/\\])main$/.test(changedPath)
+    if (!isTsFile && !isMainDir) return
+    scheduleEntryRefresh(`${eventName}: ${changedPath}`)
+  }
+
+  entryWatcher.on('add', path => onEntryEvent('add', path))
+  entryWatcher.on('unlink', path => onEntryEvent('unlink', path))
+  entryWatcher.on('addDir', path => onEntryEvent('addDir', path))
+  entryWatcher.on('unlinkDir', path => onEntryEvent('unlinkDir', path))
+  entryWatcher.on('error', error => {
+    const message = error?.message || String(error)
+    updateBuildDevStatus('error', 'Entry watcher error', [message])
+    updateBuildProdStatus('error', 'Entry watcher error', [message])
+  })
+
+  addShutdownHandler(async () => {
+    if (refreshTimer) {
+      clearTimeout(refreshTimer)
+      refreshTimer = null
+    }
+    await entryWatcher?.close()
+    await ctxDev?.dispose()
+    await ctxProd?.dispose()
+  })
 } else {
   // dev → prod の順にビルド（エラー即時表示・中断）
   console.log(`\n${c.cyan.bold('⚡ Building Screeps Arena (dev)')}`)
