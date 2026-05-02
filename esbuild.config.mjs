@@ -237,7 +237,7 @@ const expandGlobs = async patterns => {
 }
 
 const configPatterns = {
-  default: ['src/**/main/*.ts',],
+  default: ['src/**/main/*.[tj]s',],
 }
 
 
@@ -261,7 +261,7 @@ const toOutputKey = (entryPoint, mode) =>
   entryPoint
     .replace(/^src\//, '')
     .replace('/main/', '/')
-    .replace(/\.ts$/, `/${mode}/main`)
+    .replace(/\.[tj]s$/, `/${mode}/main`)
 
 const INLINE_SOURCEMAP_REGEX = /\/\/\#\s*sourceMappingURL=data:application\/json(?:;charset=[^;,]+)?;base64,([^\s]+)/m
 
@@ -597,7 +597,7 @@ if (watch) {
   })
 
   const onEntryEvent = (eventName, changedPath) => {
-    const isTsFile = changedPath.endsWith('.ts')
+    const isTsFile = changedPath.endsWith('.[tj]s')
     const isMainDir = /(^|[/\\])main$/.test(changedPath)
     if (!isTsFile && !isMainDir) return
     scheduleEntryRefresh(`${eventName}: ${changedPath}`)
