@@ -13,7 +13,7 @@
     "typecheck": "tsgo -p tsconfig.json --noEmit",
     "typecheck:tsc": "tsc -p tsconfig.json --noEmit",
     "checkall": "pnpm run format && pnpm run lint && pnpm run check && pnpm run typecheck",
-    "update-arena-types": "pnpm remove @types/typed-screeps-arena && pnpm add @types/typed-screeps-arena@github:kounoike/typed-screeps-arena#season_2",
+    "update-arena-types": "pnpm remove @types/typed-screeps-arena && pnpm add @types/typed-screeps-arena@github:kounoike/typed-screeps-arena#season_3",
     "prepare": "lefthook install"
   },
   "devDependencies": {
@@ -33,7 +33,7 @@
     "@types/lodash": "^4.14.202"
   },
   "dependencies": {
-    "@types/typed-screeps-arena": "github:kounoike/typed-screeps-arena#season_2",
+    "@types/typed-screeps-arena": "github:kounoike/typed-screeps-arena#season_3",
     "ansi-colors": "^4.1.3",
     "ansi-styles": "^6.2.3",
     "base64-js": "^1.5.1",
