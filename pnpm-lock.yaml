@@ -12,8 +12,8 @@ importers:
         specifier: ^4.14.202
         version: 4.14.202
       '@types/typed-screeps-arena':
-        specifier: github:kounoike/typed-screeps-arena#season_3
-        version: typed-screeps-arena@https://codeload.github.com/kounoike/typed-screeps-arena/tar.gz/868f5fd72bf0838bce5dc954e48e68191d320606
+        specifier: github:kounoike/typed-screeps-arena#develop
+        version: typed-screeps-arena@https://codeload.github.com/kounoike/typed-screeps-arena/tar.gz/fceba47db09e91261b0a9a8deec8e94f0512597a
       ansi-colors:
         specifier: ^4.1.3
         version: 4.1.3
@@ -611,8 +611,8 @@ packages:
     resolution: {integrity: sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==}
     engines: {node: '>=8.0'}
 
-  typed-screeps-arena@https://codeload.github.com/kounoike/typed-screeps-arena/tar.gz/868f5fd72bf0838bce5dc954e48e68191d320606:
-    resolution: {tarball: https://codeload.github.com/kounoike/typed-screeps-arena/tar.gz/868f5fd72bf0838bce5dc954e48e68191d320606}
+  typed-screeps-arena@https://codeload.github.com/kounoike/typed-screeps-arena/tar.gz/fceba47db09e91261b0a9a8deec8e94f0512597a:
+    resolution: {tarball: https://codeload.github.com/kounoike/typed-screeps-arena/tar.gz/fceba47db09e91261b0a9a8deec8e94f0512597a}
     version: 0.0.1
 
   typescript@5.9.3:
@@ -1057,7 +1057,7 @@ snapshots:
     dependencies:
       is-number: 7.0.0
 
-  typed-screeps-arena@https://codeload.github.com/kounoike/typed-screeps-arena/tar.gz/868f5fd72bf0838bce5dc954e48e68191d320606: {}
+  typed-screeps-arena@https://codeload.github.com/kounoike/typed-screeps-arena/tar.gz/fceba47db09e91261b0a9a8deec8e94f0512597a: {}
 
   typescript@5.9.3: {}
 
