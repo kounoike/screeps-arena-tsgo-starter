@@ -1,0 +1,42 @@
+{
+  "Role class (Screeps)": {
+    "prefix": ["roleclass", "role"],
+    "body": [
+      "import { TickInfo } from '@/_common/info-provider/tick-info-provider'",
+      "import { Role, RoledExtendedCreep } from '@/_common/role/role'",
+      "import { BodyPartConstant } from 'game/constants'",
+      "",
+      "interface MapInfo {",
+      "  // todo",
+      "}",
+      "",
+      "export class ${1:SomeWhatRole} extends Role {",
+      "  constructor(",
+      "    private doLogging: boolean,",
+      "    private mapInfo: MapInfo,",
+      "    private tickInfo: TickInfo,",
+      "  ) {",
+      "    super('${1/([a-z0-9])([A-Z])/$1-$2/g:/downcase}', ${2:80}, doLogging)",
+      "  }",
+      "",
+      "  init(_creep: RoledExtendedCreep): void {}",
+      "",
+      "  makeBody(): BodyPartConstant[] {",
+      "    return []",
+      "  }",
+      "",
+      "  doTacticsAll(creeps: RoledExtendedCreep[], _tick: number): void {",
+      "    for (const creep of creeps) {",
+      "      this.doTactics(creep)",
+      "    }",
+      "  }",
+      "",
+      "  doTactics(creep: RoledExtendedCreep): void {",
+      "    // TODO: implement tactics",
+      "  }",
+      "}",
+      ""
+    ],
+    "description": "Role を継承したクラスのひな形"
+  }
+}

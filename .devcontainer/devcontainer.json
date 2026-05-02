@@ -1,0 +1,50 @@
+{
+  "name": "typescript-screeps-arena (pnpm + esbuild + tsgo)",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "remoteUser": "node",
+  "postCreateCommand": "bash .devcontainer/postCreate.sh",
+  "postStartCommand": "pnpm -v && node -v",
+  "mounts": [
+    "source=${localEnv:HOME}/.gitconfig,target=/home/node/.gitconfig,type=bind,readonly",
+    "source=${localEnv:HOME}/.git-credentials,target=/home/node/.git-credentials,type=bind,readonly"
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "biomejs.biome",
+        "editorconfig.editorconfig"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "biomejs.biome",
+        "[javascript]": {
+          "editor.defaultFormatter": "biomejs.biome"
+        },
+        "[javascriptreact]": {
+          "editor.defaultFormatter": "biomejs.biome"
+        },
+        "[typescript]": {
+          "editor.defaultFormatter": "biomejs.biome"
+        },
+        "[typescriptreact]": {
+          "editor.defaultFormatter": "biomejs.biome"
+        },
+        // Biome code actions removed due to schema validation issues; rely on formatOnSave.
+        "js/ts.tsdk.path": "node_modules/typescript/lib",
+        "zig.path": "/usr/local/zig-linux/zig",
+        "zig.buildFilePath": "${workspaceFolder}/zig/build.zig",
+        "zig.zls.path": "/usr/local/bin/zls"
+      }
+    }
+  },
+  "features": {
+    "ghcr.io/devcontainer-community/devcontainer-features/starship.rs:1": {},
+    "ghcr.io/devcontainers-extra/features/pnpm:2": {},
+    "ghcr.io/devcontainers-extra/features/ripgrep:1": {},
+    "ghcr.io/devcontainer-community/devcontainer-features/zellij.dev:1": {},
+    "ghcr.io/devcontainers-extra/features/zig:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  }
+}
