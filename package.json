@@ -25,7 +25,7 @@
     "cli-cursor": "^5.0.0",
     "cloc": "1.98.0-cloc",
     "esbuild": "^0.26.0",
-    "glob": "^11.1.0",
+    "glob": "^13.0.6",
     "lefthook": "^2.0.4",
     "log-update": "^7.0.2"
   },
