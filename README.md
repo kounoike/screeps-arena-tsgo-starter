@@ -106,6 +106,8 @@ This allows watch mode to pick up new strategy entries without restarting the pr
 
 In dev mode, a custom post-process step embeds source map data into the generated bundle header to improve runtime error mapping.
 
+![](docs/logger-image.png)
+
 ## Notes
 
 - Any .ts file under a main directory becomes an entry, including temporary test files.
